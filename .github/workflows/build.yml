@@ -7,6 +7,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Unzip project if it was uploaded as a zip
+        run: |
+          for z in *.zip; do [ -f "$z" ] && unzip -oq "$z" && echo "Unzipped $z"; done || true
       - name: Show repo layout and find project
         id: find
         run: |
