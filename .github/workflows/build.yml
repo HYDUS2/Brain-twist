@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APK v3
 on:
   push:
   workflow_dispatch:
@@ -7,34 +7,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Unzip project if it was uploaded as a zip
-        run: |
-          for z in *.zip; do [ -f "$z" ] && unzip -oq "$z" && echo "Unzipped $z"; done || true
-      - name: Show repo layout and find project
-        id: find
-        run: |
-          ls -la
-          DIR=$(dirname "$(find . -name settings.gradle.kts -not -path './node_modules/*' | head -n 1)")
-          echo "Project dir: $DIR"
-          ls -la "$DIR"
-          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: android-actions/setup-android@v3
-      - name: Install SDK platform
-        run: yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
+
       - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.2'
-      - name: Build debug APK
-        working-directory: ${{ steps.find.outputs.dir }}
-        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Unzip, locate project and build (log saved)
+        id: build
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo "== repo root =="; ls -la
+            for z in *.zip; do [ -f "$z" ] && unzip -oq "$z" && echo "Unzipped $z"; done
+            SET=$(find . -name settings.gradle.kts | head -n 1)
+            echo "settings file: '$SET'"
+            if [ -z "$SET" ]; then echo "NO settings.gradle.kts FOUND - project files are missing from the repo"; exit 1; fi
+            cd "$(dirname "$SET")"
+            pwd; ls -la
+            echo "sdk.dir=$ANDROID_HOME" > local.properties
+            yes | sdkmanager --licenses >/dev/null 2>&1 || true
+            sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
+            gradle assembleDebug --no-daemon --stacktrace
+          } 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          cp "$(dirname "$SET")"/app/build/outputs/apk/debug/*.apk "$GITHUB_WORKSPACE/" 2>/dev/null || true
+
+      - name: Show the real error (as annotation + summary)
+        if: failure()
+        shell: bash
+        run: |
+          grep -n -i -E "error|FAILED|What went wrong|Caused by|not found|No such|Could not" build.log | head -n 25 > errors.txt || true
+          { echo '### Build failed - key lines'; echo '```'; cat errors.txt; echo '```'; echo '### Last 40 lines'; echo '```'; tail -n 40 build.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          MSG=$(tail -n 20 build.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g' | cut -c1-3500)
+          echo "::error title=BUILD ERROR (send me this)::$MSG"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: GearOn-debug-apk
+          name: GearOn-result
           path: |
-            ${{ steps.find.outputs.dir }}/app/build/outputs/apk/debug/*.apk
-            ${{ steps.find.outputs.dir }}/app/build/reports
+            build.log
+            *.apk
