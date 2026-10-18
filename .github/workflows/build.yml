@@ -1,4 +1,4 @@
-name: Build APK v4
+name: Build APK v5
 on:
   push:
   workflow_dispatch:
@@ -37,7 +37,6 @@ jobs:
             "$SM" "platforms;android-34" "build-tools;34.0.0" || true
             gradle assembleDebug --no-daemon --stacktrace
           } 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
-          cp "$(dirname "$SET")"/app/build/outputs/apk/debug/*.apk "$GITHUB_WORKSPACE/" 2>/dev/null || true
 
       - name: Show the real error (as annotation + summary)
         if: failure()
@@ -55,4 +54,4 @@ jobs:
           name: GearOn-result
           path: |
             build.log
-            *.apk
+            **/app/build/outputs/apk/debug/*.apk
